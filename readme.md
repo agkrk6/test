@@ -1,6 +1,7 @@
 
 ##  What is?
-Ansible playbook that installs on 3 different machines ELK stack, does simple configuration and install grafana and prometheus on machine nr 4.
+* Ansible playbook that installs on 3 different machines ELK stack, does simple configuration and install grafana and prometheus on machine nr 4. 
+ * For logstash copies test data to /opt/test.log
 
 ## Prerequestises
 * 4 VMs provisioned and on the same network/able to communicate with one another
@@ -20,6 +21,6 @@ Ansible playbook that installs on 3 different machines ELK stack, does simple co
 * elk.yml clean up, adding loops
 * Making better use of variables in inventory and elk.yml, primarily remove the need to specify host ip more than once
 * Setting up connection between prometheus and grafana, currently the metrics are only found on host:9100 and do not go to grafana without further user configuration
-* much more :>
+* much more cleanup :>
 
 
