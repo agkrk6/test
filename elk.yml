@@ -1,0 +1,355 @@
+---
+- hosts: all
+  tasks:
+  - name: Saving variable
+    set_fact:
+      host_e: <ip>
+      host_l: <ip>
+      host_k: <ip>
+      host_p: <ip>
+      
+
+
+
+- hosts: e
+  gather_facts: no
+  tasks:
+    - name: import key elastic
+      apt_key:
+        state: present
+        url: https://artifacts.elastic.co/GPG-KEY-elasticsearch 
+
+
+    - name: add repo
+      shell: >
+        echo "deb https://artifacts.elastic.co/packages/7.x/apt stable main" |
+        tee –a /etc/apt/sources.list.d/elastic-7.x.list
+
+    - name: update the system
+      tags: update
+      apt:
+        upgrade: dist
+        update_cache: yes
+
+    - name: install stuff for elk
+      apt:
+        name: "{{ packages }}"
+        state: present
+      vars:
+        packages:
+        - openjdk-8-jdk
+        - apt-transport-https
+        - elasticsearch
+        - nano
+        - ufw
+        
+    - name: replace line localhost - elastic
+      lineinfile:
+        path: /etc/elasticsearch/elasticsearch.yml
+        regexp: '^#network.host: 192.168.0.1'
+        line: 'network.host: {{ host_e }}'
+        backrefs: yes
+   
+    - name: replace line port - elastic
+      lineinfile:
+        path: /etc/elasticsearch/elasticsearch.yml
+        regexp: '^#http.port: 9200'
+        line: 'http.port: 9200'
+        backrefs: yes
+   
+   
+    - name: add line discovery - elastic
+      lineinfile:
+        path: /etc/elasticsearch/elasticsearch.yml
+        line: 'discovery.type: single-node'
+
+        
+    - name: Start elasticsearch
+      service:
+        name: elasticsearch.service
+        state: started
+        enabled: yes
+
+
+- hosts: k
+
+  gather_facts: no
+  tasks:
+   
+    - name: import key elastic
+      apt_key:
+        state: present
+        url: https://artifacts.elastic.co/GPG-KEY-elasticsearch 
+
+
+    - name: add repo
+      shell: >
+        echo "deb https://artifacts.elastic.co/packages/7.x/apt stable main" |
+        tee –a /etc/apt/sources.list.d/elastic-7.x.list
+
+    - name: update the system
+      tags: update
+      apt:
+        upgrade: dist
+        update_cache: yes      
+      
+
+    - name: install stuff for elk
+      apt:
+        name: "{{ packages }}"
+        state: present
+      vars:
+        packages:
+        - openjdk-8-jdk
+        - nginx
+        - apt-transport-https
+        - kibana
+        - nano
+        - ufw
+   
+
+   
+    - name: Allow all access to tcp port 5601 for kibana dash
+      ufw:
+        rule: allow
+        to_port: 5601
+        proto: tcp   
+
+
+    - name: replace line port - kibana
+      lineinfile:
+        path: /etc/kibana/kibana.yml
+        regexp: '^#server.port: 5601'
+        line: 'server.port: 5601'
+        backrefs: yes
+   
+   
+   
+   
+    - name: replace line host - kibana
+      lineinfile:
+        path: /etc/kibana/kibana.yml
+        regexp: '^#server.host: "localhost"'
+        line: 'server.host: "{{ host_k }}"'
+        backrefs: yes
+       
+    - name: uncomment password - kibana
+      lineinfile:
+        path: /etc/kibana/kibana.yml
+        regexp: '^#elasticsearch.password: "pass"'
+        line: 'elasticsearch.password: "pass"'
+        backrefs: yes    
+       
+    - name: uncomment username - kibana
+      lineinfile:
+        path: /etc/kibana/kibana.yml
+        regexp: '^#elasticsearch.username: "kibana_system"'
+        line: 'elasticsearch.username: "kibana_system"'
+        backrefs: yes
+       
+ 
+    - name: replace line elasticsearch.hosts - kibana
+      ansible.builtin.lineinfile:
+        path: /etc/kibana/kibana.yml
+        regexp: '^#elasticsearch.hosts: ["http://localhost:9200"]'
+        line: 'elasticsearch.hosts: ["http://{{ host_e }}:9200"]'
+   
+    - name: Start kibana
+      service:
+        name: kibana.service
+        state: started
+        enabled: yes
+
+
+
+- hosts: l
+
+  gather_facts: no
+  tasks:
+
+    - name: import key elastic
+      apt_key:
+        state: present
+        url: https://artifacts.elastic.co/GPG-KEY-elasticsearch 
+
+
+    - name: add repo
+      shell: >
+        echo "deb https://artifacts.elastic.co/packages/7.x/apt stable main" |
+        tee –a /etc/apt/sources.list.d/elastic-7.x.list
+
+    - name: update the system
+      tags: update
+      apt:
+        upgrade: dist
+        update_cache: yes      
+
+    - name: install stuff for elk
+      apt:
+        name: "{{ packages }}"
+        state: present
+      vars:
+        packages:
+        - openjdk-8-jdk
+        - apt-transport-https
+        - logstash
+        - nano
+        - ufw
+        - filebeat
+
+
+
+   
+    - name: Start logstash
+      ignore_errors: true
+      service:
+        name: logstash.service
+        state: started
+        enabled: yes    
+   
+    - name: Start filebeat
+      ignore_errors: true
+      service:
+        name: filebeat.service
+        state: started
+        enabled: yes
+       
+    - name: replace filebeat.yml
+      template:
+        src: filebeat.yml.j2
+        dest: /etc/filebeat/filebeat.yml
+      tags: filebeatyml
+     
+    - name: create file
+      file:
+        path: "/etc/filebeat/pipeline.conf"
+        state: touch
+
+
+    - name: copy the test data
+      template:
+        src: test.log.j2
+        dest: /opt/test.log
+        owner: root
+        group: root
+        mode: '0600'
+
+     
+    - name:  pipeline.conf
+      template:
+        src: pipeline.conf.j2
+        dest: /etc/filebeat/pipeline.conf   
+        
+  
+    - name: filebeat load index table
+      shell: >
+        filebeat setup --index-management -E output.logstash.enabled=false -E 'output.elasticsearch.hosts=["{{host_e}}:9200"]' 
+
+        
+    - name: start filebeat module 
+      shell: >
+        filebeat modules enable system        
+
+# promtheus ufw
+
+- hosts: all
+  roles:
+    - ubuntu-node-exporter
+  tasks:
+    - name: Allow all access to tcp port 9101 for node exporter
+      ufw:
+        rule: allow
+        src: 65.108.82.182
+        to_port: 9101
+        proto: tcp
+    
+    
+    - name: Ensure Node Exporter is started and enabled on boot
+      service:
+        name: node_exporter
+        state: started
+        enabled: true
+    
+- hosts: p
+  gather_facts: no
+  tasks:
+  
+  
+    - name: update the system
+      tags: updatez
+      apt:
+        upgrade: dist
+        update_cache: yes
+
+    - name: update and install prometheus
+      apt:
+        name: prometheus
+        state: latest
+        update_cache: yes
+        cache_valid_time: 3600
+        
+    - name: prometheus args
+      template:
+        src: prometheus.j2
+        dest: /etc/default/prometheus.yml
+        mode: 0644
+        owner: root
+        group: root
+      
+
+      
+    - name: start prometheus
+      systemd:
+        name: prometheus
+        state: started
+        enabled: yes
+
+        
+    - name: install gpg
+      apt:
+        name: gnupg,software-properties-common
+        state: present
+        update_cache: yes
+        cache_valid_time: 3600
+        
+    - name: add gpg hey
+      apt_key:
+        url: "https://packages.grafana.com/gpg.key"
+        validate_certs: no
+        
+    - name: add repository
+      apt_repository:
+        repo: "deb https://packages.grafana.com/oss/deb stable main"             
+        state: present
+        validate_certs: no
+        
+    - name: install grafana
+      apt:
+        name: grafana
+        state: latest
+        update_cache: yes
+        cache_valid_time: 3600
+        
+    - name: start service grafana-server
+      systemd:
+        name: grafana-server
+        state: started
+        enabled: yes
+        
+    - name: wait for service up
+      uri:
+        url: "http://127.0.0.1:3000"
+        status_code: 200
+      register: __result
+      until: __result.status == 200
+      retries: 120
+      delay: 1
+      
+    - name: change admin password for grafana gui
+      shell : "grafana-cli admin reset-admin-password 'testpassword' "
+      register: __command_admin
+      changed_when: __command_admin.rc !=0
+          
+
+            
+            

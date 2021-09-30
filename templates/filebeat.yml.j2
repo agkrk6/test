@@ -1,0 +1,18 @@
+
+filebeat.inputs:
+- type: log
+  paths:
+    - /opt/test.log
+output.logstash:
+  hosts: ["{{host_e}}:5042"]
+
+
+
+filebeat.config.modules:
+  path: ${path.config}/modules.d/*.yml
+
+
+  reload.enabled: false
+
+
+
